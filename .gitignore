@@ -1,2 +1,7 @@
-./garbage
-./data
+/.idea
+
+/.venv
+
+/data
+
+/garbage
