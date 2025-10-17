@@ -170,7 +170,7 @@ def move_images_with_dict(
 
     print(f"Moved {moved} most uncertain images from {unlabeled_dir} → {labeled_dir}.")
 
-def score_unlabeled_pool(unlabeled_loader, model, score_fn, num_classes=5, device="cuda"):
+def score_unlabeled_pool(unlabeled_loader, model, score_fn, T=8, num_classes=5, device="cuda"):
     """Scores the unlabeled pool of images using a given scoring function.
 
     This function iterates through the unlabeled data, applies the specified scoring function
@@ -181,17 +181,19 @@ def score_unlabeled_pool(unlabeled_loader, model, score_fn, num_classes=5, devic
         unlabeled_loader (DataLoader): The data loader for the unlabeled pool.
         model (nn.Module): The model to use for scoring.
         score_fn (callable): The function to use for calculating the uncertainty scores.
+        T (int, optional): The number of Monte Carlo samples for stochastic forward passes. Defaults to 8.
         num_classes (int, optional): The number of classes. Defaults to 5.
         device (str, optional): The device to use for computation. Defaults to "cuda".
 
     Returns:
         dict: A dictionary where keys are image filenames and values are their uncertainty scores.
     """
+    model.to(device).train()
     scores, fnames = [], []
     with torch.no_grad():
         for imgs, names in tqdm(unlabeled_loader, desc="Scoring", leave=False):
             imgs = imgs.to(device)
-            s = score_fn(model, imgs, num_classes=num_classes)
+            s = score_fn(model, imgs, T=T, num_classes=num_classes)
             scores.extend(s.cpu().tolist())
             fnames.extend(names)
     return dict(zip(fnames, scores))
