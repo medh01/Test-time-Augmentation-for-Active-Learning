@@ -59,7 +59,6 @@ class BlastocystDataset(Dataset):
         if self.augment:
             img, aug_dict = augment_image(img)
             mask = augment_mask(mask, aug_dict)
-            print(aug_dict)
 
         return img, mask, img_name
 

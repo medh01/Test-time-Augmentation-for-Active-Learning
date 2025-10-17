@@ -70,7 +70,7 @@ def active_learning_loop(
     os.makedirs(ckpt_dir, exist_ok=True)
 
     # ─────────────────── model built once ────────────────────
-    model = BayesianUNet(in_channels=1, num_classes=5, dropout_prob=dropout).to(device)
+    model = BayesianUNet(in_channels=3, num_classes=5, dropout_prob=dropout).to(device)
     optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=1e-4)
 
     iteration = 0
