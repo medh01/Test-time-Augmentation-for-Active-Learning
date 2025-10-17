@@ -58,19 +58,20 @@ def load_config(config_path: Optional[str] = None) -> dict:
 
 # ---------- Experiment runners ----------
 
+def _get(cfg: dict, *keys, default=None):
+    """Small helper to safely drill into nested dicts."""
+    cur = cfg
+    for k in keys:
+        if not isinstance(cur, dict) or k not in cur:
+            return default
+        cur = cur[k]
+    return cur
+
+
 def run_single_experiment(experiment_config: dict, experiment_idx: Optional[int] = None) -> Path:
     """Run a single experiment with given configuration and return its results directory."""
 
-    # Basic validation and defaults
-    def _get(cfg, *keys, default=None):
-        cur = cfg
-        for k in keys:
-            if not isinstance(cur, dict) or k not in cur:
-                return default
-            cur = cur[k]
-        return cur
-
-    # validate presence of some important fields early
+    # ---- Validate presence of important fields early
     if not isinstance(experiment_config, dict):
         raise ValueError("Experiment config must be a mapping/dict")
     if _get(experiment_config, "active_learning", "acquisition_functions") is None:
@@ -78,7 +79,14 @@ def run_single_experiment(experiment_config: dict, experiment_idx: Optional[int]
     if _get(experiment_config, "output", "results_dir") is None:
         raise ValueError("Each experiment must define output.results_dir")
 
-    # Device setup
+    # ---- Section handles (match YAML structure)
+    data_cfg   = experiment_config.get("data", {})              # label_split_ratio, test_split_ratio, augment
+    train_cfg  = experiment_config.get("training", {})          # dropout, batch_size, lr, patience, min_delta
+    al_cfg     = experiment_config.get("active_learning", {})   # sample_size, mc_runs, loop_iterations, acquisition_functions
+    ssl_cfg    = experiment_config.get("ssl", {})               # ssl_lambda_max, ssl_ramp_epochs
+    output_cfg = experiment_config.get("output", {})            # results_dir, log_format
+
+    # ---- Device setup
     device = experiment_config.get("device", "auto")
     if device == "auto":
         device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -91,17 +99,14 @@ def run_single_experiment(experiment_config: dict, experiment_idx: Optional[int]
     print(f"{'=' * 80}")
     print(f"Device: {device}")
     print(f"Seed: {experiment_config.get('seed')}")
-    acq_list = _get(experiment_config, "active_learning", "acquisition_functions", default=[])
-    print(f"Acquisition functions: {acq_list}")
+    print(f"Acquisition functions: {al_cfg.get('acquisition_functions', [])}")
     print(f"{'=' * 80}\n")
 
-    # Create output directory with timestamp under project root (unless user gave an absolute path)
+    # ---- Create output directory (absolute respected, relative under project root)
     root = project_root()
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-    # Resolve results_dir: allow absolute or relative (relative = under project root)
-    configured_results_dir = experiment_config["output"]["results_dir"]
-    configured_results_dir = Path(configured_results_dir)
+    configured_results_dir = Path(output_cfg["results_dir"])
     if not configured_results_dir.is_absolute():
         configured_results_dir = root / configured_results_dir
 
@@ -110,45 +115,47 @@ def run_single_experiment(experiment_config: dict, experiment_idx: Optional[int]
 
     print(f"Results directory: {results_dir}\n")
 
-    # Run experiments for each acquisition function
-    for acq in experiment_config["active_learning"]["acquisition_functions"]:
+    # ---- Run each acquisition function
+    for acq in al_cfg["acquisition_functions"]:
         print(f"\n{'-' * 60}")
         print(f"Running acquisition function: {acq}")
         print(f"{'-' * 60}\n")
 
         try:
-            # Build kwargs for active_learning_loop from config, providing sensible defaults when missing
-            al_cfg = experiment_config.get("active_learning", {})
-            data_cfg = experiment_config.get("data", {})
-            training_cfg = experiment_config.get("training", {})
-            output_cfg = experiment_config.get("output", {})
-
             df = active_learning_loop(
+                # top-level / misc
                 BASE_DIR=experiment_config.get("base_dir"),
+                seed=experiment_config.get("seed"),
+                device=device,
+
+                # data
                 LABEL_SPLIT_RATIO=data_cfg.get("label_split_ratio", 0.1),
                 TEST_SPLIT_RATIO=data_cfg.get("test_split_ratio", 0.2),
                 augment=data_cfg.get("augment", False),
+
+                # active learning
                 sample_size=al_cfg.get("sample_size", 2),
                 acquisition_type=acq,
                 mc_runs=al_cfg.get("mc_runs", 8),
-                dropout=al_cfg.get("dropout", 0.3),
-                batch_size=training_cfg.get("batch_size", 16),
-                lr=training_cfg.get("lr", 1e-3),
-                seed=experiment_config.get("seed"),
-                loop_iterations=training_cfg.get("loop_iterations", None),
-                device=device,
-                patience=training_cfg.get("patience", 15),
-                min_delta=training_cfg.get("min_delta", 1e-4),
-                ssl_lambda_max=al_cfg.get("ssl_lambda_max", 1.0),
-                ssl_ramp_epochs=al_cfg.get("ssl_ramp_epochs", 10),
+                loop_iterations=al_cfg.get("loop_iterations", None),
+
+                # training
+                dropout=train_cfg.get("dropout", 0.3),
+                batch_size=train_cfg.get("batch_size", 16),
+                lr=train_cfg.get("lr", 1e-3),
+                patience=train_cfg.get("patience", 15),
+                min_delta=train_cfg.get("min_delta", 1e-4),
+
+                # SSL
+                ssl_lambda_max=ssl_cfg.get("ssl_lambda_max", 1.0),
+                ssl_ramp_epochs=ssl_cfg.get("ssl_ramp_epochs", 10),
             )
 
-            # Add metadata columns
+            # Save results if DataFrame
             if isinstance(df, pd.DataFrame):
                 df["method"] = acq
                 df["experiment"] = exp_name
 
-                # Save individual result
                 log_fmt = output_cfg.get("log_format", "{method}.csv")
                 output_path = results_dir / log_fmt.format(method=acq)
                 df.to_csv(output_path, index=False)
@@ -162,7 +169,7 @@ def run_single_experiment(experiment_config: dict, experiment_idx: Optional[int]
             traceback.print_exc()
             continue
 
-    # Save experiment config for reproducibility
+    # ---- Save exact experiment config for reproducibility
     config_copy_path = results_dir / "config.yaml"
     with open(config_copy_path, "w", encoding="utf-8") as f:
         yaml.dump(experiment_config, f, default_flow_style=False, allow_unicode=True)
@@ -175,7 +182,7 @@ def run_experiments(config_path: Optional[str] = None) -> None:
     """Run all experiments from a config file (supports both single and multiple experiment formats)."""
     config = load_config(config_path)
 
-    # New format: a list of experiments under 'experiments'
+    # New format: list of experiments under 'experiments'
     if "experiments" in config and isinstance(config["experiments"], list):
         experiments = config["experiments"]
         print(f"\nFound {len(experiments)} experiment(s) to run\n")
