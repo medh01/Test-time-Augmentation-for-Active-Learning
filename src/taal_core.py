@@ -2,7 +2,7 @@ import torch
 import torch.nn.functional as F
 from typing import List
 
-from src.augmentation_utils import augment_image, reverse_augmentations
+from augmentation_utils import augment_image, reverse_augmentations
 
 #################### Jensen-Shannon Divergence (JSD) ####################
 def entropy(probs: torch.Tensor, dim: int, eps: float=1e-8) -> torch.Tensor:

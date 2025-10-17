@@ -4,7 +4,7 @@ import os
 import random
 from PIL import Image, ImageOps
 import numpy as np
-from src.augmentation_utils import augment_image, augment_mask
+from augmentation_utils import augment_image, augment_mask
 
 Classes = {
     (51, 221, 255): 0,  # ICM

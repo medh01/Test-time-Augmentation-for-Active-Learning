@@ -7,7 +7,7 @@ import torch, torch.nn as nn
 from torch.cuda.amp import autocast, GradScaler
 from tqdm import tqdm
 
-from src.metrics import pixel_accuracy, macro_dice
+from metrics import pixel_accuracy, macro_dice
 
 @dataclass(frozen=True)
 class SSLConfig:

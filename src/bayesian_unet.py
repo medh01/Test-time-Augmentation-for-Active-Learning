@@ -1,4 +1,3 @@
-import torch
 import torch.nn as nn
 from bayesian_unet_parts import DoubleConv, EncoderBloc, DecoderBloc
 
@@ -55,9 +54,3 @@ class BayesianUNet(nn.Module):
 
         # Output
         return self.out(u4)
-
-if __name__ == '__main__':
-    model = BayesianUNet(3, 5, 0.5)
-    x = torch.randn(1, 3, 256, 256)
-    pred = model(x)
-    print(pred.shape)
